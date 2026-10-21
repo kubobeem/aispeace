@@ -32,9 +32,9 @@ python -m http.server 8000
 1. **GGUF をドラッグ&ドロップ** — ローカルに置いた `nano-ja-sft.gguf` をそのまま
 2. **URL から取得** — 公開 URL、または Hugging Face の private リポジトリの resolve URL + HF トークン
 
-重みはライセンスの都合で公開していないため、リポジトリは private です
-(`kubobeem/nano-ja-sft-kubobeem`, `kubobeem/nano-ja-sft-weight`)。トークンはその場で
-`Authorization: Bearer` にだけ使い、保存も送信もしません。
+重みのリポジトリ (`kubobeem/nano-ja-sft-kubobeem`, `kubobeem/nano-ja-sft-weight`) は
+現在整理中のため private にしています。トークンはその場で `Authorization: Bearer` に
+だけ使い、保存も送信もしません。
 
 GitHub Pages に置く場合も同じです (Settings → Pages → main / root)。ページ自体は重みを含みません。
 
