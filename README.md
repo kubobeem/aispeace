@@ -27,16 +27,24 @@ python -m http.server 8000
 # → http://localhost:8000/
 ```
 
-初回に GGUF を読み込みます。方法は 2 つ:
+ページを開くと自動で重みを読み込みます (UI 操作もローディング表示もなし)。探索順:
 
-1. **GGUF をドラッグ&ドロップ** — ローカルに置いた `nano-ja-sft.gguf` をそのまま
-2. **URL から取得** — 公開 URL、または Hugging Face の private リポジトリの resolve URL + HF トークン
+1. `?model=<URL>` で指定した URL
+2. `index.html` と同じディレクトリの `model.gguf`
+3. Hugging Face の `nano-ja-sft.gguf` (private リポジトリ)
 
-重みのリポジトリ (`kubobeem/nano-ja-sft-kubobeem`, `kubobeem/nano-ja-sft-weight`) は
-現在整理中のため private にしています。トークンはその場で `Authorization: Bearer` に
-だけ使い、保存も送信もしません。
+```sh
+# ローカルで動かす場合は 322 MB の GGUF を index.html の隣に置くだけ
+cp nano-ja-sft.gguf ./model.gguf
+```
 
-GitHub Pages に置く場合も同じです (Settings → Pages → main / root)。ページ自体は重みを含みません。
+重みのリポジトリ (`kubobeem/nano-ja-sft-kubobeem`) は現在整理中のため private です。
+HF から読む場合だけトークンが必要で、`?token=hf_...` を付けるか、一度だけ
+`localStorage.hf_token = "hf_..."` を設定します (`Authorization: Bearer` にだけ使い、
+保存もしません)。`model.gguf` は `.gitignore` 済みなので誤ってコミットされません。
+
+GitHub Pages に置く場合も同じで、`?model=<重みの URL>` を付けるか、同じホストに
+`model.gguf` を置いてください。ページ自体は重みを含みません。
 
 ## アーキテクチャ
 

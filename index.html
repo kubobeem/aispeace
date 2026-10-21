@@ -57,28 +57,6 @@
   .settings label { display: flex; align-items: center; gap: 8px; }
   input[type=range] { accent-color: var(--accent); width: 120px; }
   .settings b { color: var(--text); font-variant-numeric: tabular-nums; }
-  #overlay {
-    position: fixed; inset: 0; background: rgba(6, 8, 11, .92); backdrop-filter: blur(6px);
-    display: grid; place-items: center; padding: 20px; z-index: 10;
-  }
-  #overlay.hidden { display: none; }
-  .panel { width: min(520px, 100%); background: var(--panel-2); border: 1px solid var(--line); border-radius: 16px; padding: 26px; }
-  .panel h1 { font-size: 20px; margin: 0 0 6px; }
-  .panel p { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 0 0 18px; }
-  .drop {
-    border: 1.5px dashed #2c3a4a; border-radius: 12px; padding: 26px; text-align: center; color: var(--muted);
-    cursor: pointer; transition: border-color .15s, background .15s;
-  }
-  .drop:hover, .drop.over { border-color: var(--accent-dim); background: rgba(110, 231, 200, .04); }
-  .drop strong { color: var(--text); display: block; margin-bottom: 4px; }
-  .row { display: flex; gap: 8px; margin-top: 14px; }
-  .row input { flex: 1; padding: 11px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 13px; }
-  .row input:focus { outline: none; border-color: var(--accent-dim); }
-  .bar { height: 4px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 18px; }
-  .bar i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .15s; }
-  .status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 1.2em; }
-  .status.err { color: #f2778a; }
-  .hint { font-size: 11px; color: #5f6b7a; margin-top: 10px; line-height: 1.6; }
   .sample { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
   .sample button { font-size: 12px; padding: 8px 12px; font-weight: 500; }
   #result { position: fixed; left: -9999px; }
@@ -87,7 +65,7 @@
 <body>
 <header>
   <div class="brand">nano-ja <span>WebGPU demo</span></div>
-  <div class="meta" id="meta">読み込み待ち</div>
+  <div class="meta" id="meta"></div>
 </header>
 
 <main id="chat">
@@ -111,34 +89,6 @@
     <button id="send" disabled>送信</button>
   </div>
 </footer>
-
-<div id="overlay">
-  <div class="panel">
-    <h1>nano-ja をブラウザで動かす</h1>
-    <p>
-      49M パラメータの日本語モデル (nanochat-ja SFT) を WebGPU で推論します。
-      量子化なしの bf16 GGUF (約 322 MB) を読み込み、重みはすべてこの端末内に留まります。
-    </p>
-    <div class="drop" id="drop">
-      <strong>GGUF ファイルをドロップ</strong>
-      またはクリックして選択 (nano-ja-sft.gguf)
-    </div>
-    <input type="file" id="file" accept=".gguf" hidden />
-    <div class="row">
-      <input id="url" placeholder="https://…/nano-ja-sft.gguf" />
-      <button id="fetch" class="ghost">URL から</button>
-    </div>
-    <div class="row">
-      <input id="token" placeholder="HF トークン (private リポジトリの場合・任意)" type="password" />
-    </div>
-    <div class="bar"><i id="prog"></i></div>
-    <div class="status" id="status">待機中</div>
-    <div class="hint">
-      重みのリポジトリは現在整理中のため private です。
-      取得した GGUF をローカルに置いてドロップするのが確実です。
-    </div>
-  </div>
-</div>
 
 <div id="result"></div>
 <script type="module" src="./js/main.js"></script>
