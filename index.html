@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>nano-ja — WebGPU demo</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --panel: #11151c;
+    --panel-2: #161b24;
+    --line: #222a36;
+    --text: #e8edf5;
+    --muted: #8b97a8;
+    --accent: #6ee7c8;
+    --accent-dim: #2b6f62;
+    --user: #1b2431;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: radial-gradient(1200px 700px at 70% -10%, #16303a 0%, var(--bg) 55%);
+    color: var(--text); font-family: "Hiragino Sans", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+    display: flex; flex-direction: column; min-height: 100vh;
+  }
+  header {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+    padding: 18px 24px; border-bottom: 1px solid var(--line);
+  }
+  .brand { font-size: 18px; font-weight: 700; letter-spacing: .02em; }
+  .brand span { color: var(--accent); font-weight: 600; font-size: 12px; margin-left: 8px; letter-spacing: .12em; text-transform: uppercase; }
+  .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  main { flex: 1; width: min(880px, 100%); margin: 0 auto; padding: 24px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .msg { display: flex; gap: 12px; animation: in .18s ease-out; }
+  @keyframes in { from { opacity: 0; transform: translateY(4px); } }
+  .who { flex: 0 0 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .msg.user .who { background: var(--user); color: var(--muted); }
+  .msg.bot .who { background: var(--accent-dim); color: var(--accent); }
+  .bubble { flex: 1; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); line-height: 1.75; white-space: pre-wrap; word-break: break-word; }
+  .msg.user .bubble { background: var(--user); }
+  .bubble.typing::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  footer { border-top: 1px solid var(--line); background: rgba(10, 12, 16, .86); backdrop-filter: blur(8px); }
+  .composer { width: min(880px, 100%); margin: 0 auto; padding: 14px 24px 18px; display: flex; gap: 10px; align-items: flex-end; }
+  textarea {
+    flex: 1; resize: none; max-height: 160px; padding: 12px 14px; border-radius: 12px;
+    background: var(--panel); color: var(--text); border: 1px solid var(--line); font: inherit; line-height: 1.5;
+  }
+  textarea:focus { outline: none; border-color: var(--accent-dim); }
+  button {
+    border: 0; border-radius: 11px; padding: 12px 18px; font: inherit; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: #04110d;
+  }
+  button:disabled { opacity: .4; cursor: default; }
+  button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+  .settings { width: min(880px, 100%); margin: 0 auto; padding: 0 24px 12px; display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 12px; align-items: center; }
+  .settings label { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { accent-color: var(--accent); width: 120px; }
+  .settings b { color: var(--text); font-variant-numeric: tabular-nums; }
+  #overlay {
+    position: fixed; inset: 0; background: rgba(6, 8, 11, .92); backdrop-filter: blur(6px);
+    display: grid; place-items: center; padding: 20px; z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  .panel { width: min(520px, 100%); background: var(--panel-2); border: 1px solid var(--line); border-radius: 16px; padding: 26px; }
+  .panel h1 { font-size: 20px; margin: 0 0 6px; }
+  .panel p { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 0 0 18px; }
+  .drop {
+    border: 1.5px dashed #2c3a4a; border-radius: 12px; padding: 26px; text-align: center; color: var(--muted);
+    cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent-dim); background: rgba(110, 231, 200, .04); }
+  .drop strong { color: var(--text); display: block; margin-bottom: 4px; }
+  .row { display: flex; gap: 8px; margin-top: 14px; }
+  .row input { flex: 1; padding: 11px 12px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); color: var(--text); font: inherit; font-size: 13px; }
+  .row input:focus { outline: none; border-color: var(--accent-dim); }
+  .bar { height: 4px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 18px; }
+  .bar i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .15s; }
+  .status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 1.2em; }
+  .status.err { color: #f2778a; }
+  .hint { font-size: 11px; color: #5f6b7a; margin-top: 10px; line-height: 1.6; }
+  .sample { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  .sample button { font-size: 12px; padding: 8px 12px; font-weight: 500; }
+  #result { position: fixed; left: -9999px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">nano-ja <span>WebGPU demo</span></div>
+  <div class="meta" id="meta">読み込み待ち</div>
+</header>
+
+<main id="chat">
+  <div class="sample" id="samples">
+    <button class="ghost" data-p="自己紹介をしてください。">自己紹介して</button>
+    <button class="ghost" data-p="AIの未来についてどう思いますか？">AIの未来</button>
+    <button class="ghost" data-p="おすすめの本を3冊教えてください。">本を3冊</button>
+    <button class="ghost" data-p="富士山の高さは？">富士山の高さ</button>
+  </div>
+</main>
+
+<footer>
+  <div class="settings">
+    <label>温度 <input type="range" id="temp" min="0" max="1.5" step="0.1" value="0.6" /><b id="tempv">0.6</b></label>
+    <label>top-k <input type="range" id="topk" min="1" max="200" step="1" value="50" /><b id="topkv">50</b></label>
+    <label>最大トークン <input type="range" id="maxt" min="16" max="512" step="16" value="256" /><b id="maxtv">256</b></label>
+    <button class="ghost" id="reset">会話をリセット</button>
+  </div>
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="メッセージを入力 (Enter で送信 / Shift+Enter 改行)" disabled></textarea>
+    <button id="send" disabled>送信</button>
+  </div>
+</footer>
+
+<div id="overlay">
+  <div class="panel">
+    <h1>nano-ja をブラウザで動かす</h1>
+    <p>
+      49M パラメータの日本語モデル (nanochat-ja SFT) を WebGPU で推論します。
+      量子化なしの bf16 GGUF (約 322 MB) を読み込み、重みはすべてこの端末内に留まります。
+    </p>
+    <div class="drop" id="drop">
+      <strong>GGUF ファイルをドロップ</strong>
+      またはクリックして選択 (nano-ja-sft.gguf)
+    </div>
+    <input type="file" id="file" accept=".gguf" hidden />
+    <div class="row">
+      <input id="url" placeholder="https://…/nano-ja-sft.gguf" />
+      <button id="fetch" class="ghost">URL から</button>
+    </div>
+    <div class="row">
+      <input id="token" placeholder="HF トークン (private リポジトリの場合・任意)" type="password" />
+    </div>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="status" id="status">待機中</div>
+    <div class="hint">
+      重みを公開できないため (ライセンス都合)、リポジトリは private です。
+      取得した GGUF をローカルに置いてドロップするのが確実です。
+    </div>
+  </div>
+</div>
+
+<div id="result"></div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
