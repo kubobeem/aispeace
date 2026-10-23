@@ -1,6 +1,7 @@
 import { parseGGUF } from "./gguf.js";
 import { Tokenizer } from "./tokenizer.js";
 import { createDevice, NanochatGPU, finalizeLogits, sampleToken } from "./model.js";
+import { NanochatCPU } from "./model-cpu.js";
 
 const $ = (id) => document.getElementById(id);
 const chat = $("chat");
@@ -8,41 +9,68 @@ const chat = $("chat");
 // The demo only ever runs this one model. Loaded silently in the background:
 // ?model=<url> wins, then ./model.gguf next to index.html, then the HF copy
 // (private repo: pass ?token=... once or set localStorage.hf_token).
+// ?cpu=1 forces the pure-JS backend even when WebGPU is available.
 const HF_GGUF = "https://huggingface.co/kubobeem/nano-ja-sft-kubobeem/resolve/main/nano-ja-sft.gguf";
 const params = new URLSearchParams(location.search);
 const token = params.get("token") || localStorage.getItem("hf_token") || "";
+const forceCpu = params.has("cpu");
 const sources = [params.get("model"), "./model.gguf", HF_GGUF].filter(Boolean);
 
 let model = null;
 let tok = null;
 let conversation = [];
 let busy = false;
+let backendLabel = "";
 
 const meta = (text) => { $("meta").textContent = text; };
 
-async function loadModel(device, info, buffer) {
+async function pickBackend() {
+  if (forceCpu) {
+    backendLabel = "CPU";
+    return { kind: "cpu", device: null, info: { description: "CPU (forced)" } };
+  }
+  try {
+    const { device, info } = await createDevice();
+    backendLabel = "WebGPU";
+    return { kind: "gpu", device, info };
+  } catch (e) {
+    console.warn("WebGPU unavailable, falling back to CPU:", e.message);
+    backendLabel = "CPU";
+    return { kind: "cpu", device: null, info: { description: "CPU (fallback)" } };
+  }
+}
+
+async function loadModel(backend, info, buffer) {
   const file = parseGGUF(buffer);
   const arch = file.kv["general.architecture"];
   if (arch !== "nanochat") throw new Error(`アーキテクチャが違います: ${arch}`);
   tok = new Tokenizer(file.kv);
-  const shaders = await (await fetch("./js/kernels.wgsl")).text();
-  const gpu = new NanochatGPU(device, shaders);
-  await gpu.upload(file);
-  await gpu.prefill([tok.bos]); // warm up so the first message is not penalised by pipeline creation
-  gpu.reset();
-  model = gpu;
+
+  let engine;
+  if (backend.kind === "gpu") {
+    const shaders = await (await fetch("./js/kernels.wgsl")).text();
+    engine = new NanochatGPU(backend.device, shaders);
+  } else {
+    engine = new NanochatCPU();
+  }
+  meta(`読み込み中… ${backendLabel}`);
+  await engine.upload(file);
+  await engine.prefill([tok.bos]); // warm up
+  engine.reset();
+  model = engine;
   conversation = [tok.bos];
   $("input").disabled = false;
   $("send").disabled = false;
   $("input").focus();
-  meta(`${info.description || info.vendor || "WebGPU"} · bf16 ${(buffer.byteLength / 1048576).toFixed(0)} MB`);
-  return gpu;
+  const desc = info.description || info.vendor || backendLabel;
+  meta(`${desc} · bf16 ${(buffer.byteLength / 1048576).toFixed(0)} MB · ${backendLabel}`);
+  return engine;
 }
 
 async function boot() {
-  let device, info;
+  let backend;
   try {
-    ({ device, info } = await createDevice());
+    backend = await pickBackend();
   } catch (e) {
     meta(e.message);
     return;
@@ -52,7 +80,7 @@ async function boot() {
     try {
       const res = await fetch(src, token && src.startsWith("http") ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      await loadModel(device, info, await res.arrayBuffer());
+      await loadModel(backend, backend.info, await res.arrayBuffer());
       return;
     } catch (e) {
       last = e;
@@ -115,7 +143,7 @@ async function generate(userText) {
     }
     const dt = (performance.now() - genStart) / 1000;
     bubble.classList.remove("typing");
-    meta(`${produced} tok · ${(produced / dt).toFixed(1)} tok/s · 初回 ${Math.round(firstLatency)} ms · kv ${model.kvPos}/2048`);
+    meta(`${produced} tok · ${(produced / dt).toFixed(1)} tok/s · 初回 ${Math.round(firstLatency)} ms · kv ${model.kvPos}/2048 · ${backendLabel}`);
   } catch (e) {
     console.error(e);
     bubble.classList.remove("typing");
@@ -168,20 +196,21 @@ if (params.has("test")) {
   (async () => {
     try {
       const url = params.get("test");
-      const { device, info } = await createDevice();
+      const backend = await pickBackend();
       const res = await fetch(url, token && url.startsWith("http") ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const gpu = await loadModel(device, info, await res.arrayBuffer());
+      const engine = await loadModel(backend, backend.info, await res.arrayBuffer());
       const ids = params.get("ids")
         ? params.get("ids").split(",").map(Number)
         : [32759, 32760, 31946, 2628, 1407, 266, 32761, 32762];
       const t0 = performance.now();
-      const raw = await gpu.prefill(ids);
+      const raw = await engine.prefill(ids);
       const ms = performance.now() - t0;
       const lg = finalizeLogits(raw);
       const top = Array.from(lg.keys()).sort((a, b) => lg[b] - lg[a]).slice(0, 10);
       const payload = {
         ok: true,
+        backend: backendLabel,
         ms: Math.round(ms),
         tokens: ids,
         top10: top.map((i) => [i, Number(lg[i].toFixed(4))]),

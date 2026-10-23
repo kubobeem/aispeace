@@ -1,18 +1,20 @@
-# aispeace — nano-ja WebGPU demo
+# aispeace — nano-ja WebGPU / CPU demo
 
 [nanochat-ja](https://huggingface.co/kubobeem/nano-ja-sft-kubobeem) (49M パラメータの日本語 SFT モデル) を
-**ブラウザ内だけで** 動かす WebGPU デモです。サーバーもビルドもフレームワークも不要 — 素の JS + WGSL だけ。
+**ブラウザ内だけで** 動かすデモです。サーバーもビルドもフレームワークも不要 — 素の JS + WGSL だけ。
 
-- 重み (bf16 GGUF, 322 MB) を読み込み、推論はすべて GPU 上で実行
-- 量子化なし、重みは f16 として GPU に常駐
+- 重み (bf16 GGUF, 322 MB) を読み込み、推論は **WebGPU**（あれば）または **CPU**（フォールバック）で実行
+- 量子化なし、重みは f16 として GPU に常駐 / CPU では f32
 - テキストは端末外に送信されません
+- WebGPU 非対応ブラウザでも `js/model-cpu.js` で動きます（遅いですが動く）
 
 ```
 index.html             UI (チャット)
-js/main.js             読み込み・生成ループ・サンプリング
+js/main.js             読み込み・生成ループ・サンプリング・バックエンド選択
 js/model.js            WebGPU のモデル実装 (バッファ / ディスパッチ / forward)
+js/model-cpu.js        純 JS の CPU 実装 (WebGPU 不可時のフォールバック)
 js/kernels.wgsl        WGSL カーネル (gemv, attention, RoPE, RMSNorm, ...)
-js/gguf.js             GGUF パーサ + bf16→f16 変換
+js/gguf.js             GGUF パーサ + bf16→f16 / bf16→f32 変換
 js/tokenizer.js        byte-level BPE (GGUF の語彙から構築)
 tools/ref.py           NumPy リファレンス実装 (検証用)
 tools/verify.mjs       WebGPU 出力と上記の突合 (CDP 経由)
@@ -27,7 +29,7 @@ python -m http.server 8000
 # → http://localhost:8000/
 ```
 
-ページを開くと自動で重みを読み込みます (UI 操作もローディング表示もなし)。探索順:
+ページを開くと自動で重みを読み込みます。探索順:
 
 1. `?model=<URL>` で指定した URL
 2. `index.html` と同じディレクトリの `model.gguf`
@@ -37,6 +39,11 @@ python -m http.server 8000
 # ローカルで動かす場合は 322 MB の GGUF を index.html の隣に置くだけ
 cp nano-ja-sft.gguf ./model.gguf
 ```
+
+バックエンド:
+
+- 既定: WebGPU が使えれば GPU、ダメなら自動で CPU
+- `?cpu=1` で強制 CPU（検証や比較用）
 
 重みのリポジトリ (`kubobeem/nano-ja-sft-kubobeem`) は現在整理中のため private です。
 HF から読む場合だけトークンが必要で、`?token=hf_...` を付けるか、一度だけ
@@ -65,10 +72,11 @@ GitHub Pages に置く場合も同じで、`?model=<重みの URL>` を付ける
 - 1 バッファ = 1 テンソル。最大でも 50 MB なので既定の `maxBufferSize` (256 MB) に収まる
 - プロンプトは 1 回のディスパッチ列で prefill (最大 512 トークン)、以降は 1 トークンずつ decode
 - サンプリング (temperature / top-k) と softcap は CPU 側。logits は 128 KB の readback
+- **CPU パス** は同じ数式を TypedArray で実装。長い prefill 中はイベントループに yield して UI を固まらせない
 
 ## 検証
 
-同じ GGUF を NumPy で読む独立実装 (`tools/ref.py`) と、GPU の出力を突き合わせています。
+同じ GGUF を NumPy で読む独立実装 (`tools/ref.py`) と、GPU / CPU の出力を突き合わせています。
 
 ```sh
 python tools/ref.py model.gguf
@@ -78,6 +86,7 @@ python tools/ref.py model.gguf
 
 デモ側は `?test=<gguf の URL>` を付けると、同じプロンプトで prefill して top-10 を
 `#result` に書き出します (`document.title` が `OK ...` になったら完了)。
+CPU で試すときは `?test=...&cpu=1`。
 
 ```sh
 chrome --remote-debugging-port=9222 --user-data-dir=%TEMP%\wgpu about:blank
@@ -89,11 +98,13 @@ node tools/verify.mjs "http://localhost:8000/?test=/model.gguf"
 
 ## 性能
 
-RTX 4060 / Chrome 155 での実測:
+RTX 4060 / Chrome 155 での実測 (WebGPU):
 
 - 初回トークン ~30–50 ms (8 トークンの prefill)
 - 生成 ~22 tok/s (1 トークンあたり ~45 ms)
 - VRAM ~390 MB (重み 322 MB + KV キャッシュ 38 MB + アクティベーション)
+
+CPU (純 JS) はマシン次第でおおよそ 0.5–3 tok/s 程度。動作確認・フォールバック用途。
 
 ## 制限
 
@@ -101,3 +112,4 @@ RTX 4060 / Chrome 155 での実測:
 - コンテキストは 2048、1 回の prefill は 512 トークンまで
 - モデルが 49M なので応答品質はそれなり。数学的な再現性が目的のデモです
 - `shader-f16` を使わない代わりに、重みは f16 精度 (元の bf16 と同等以上)
+- CPU パスは SIMD / WASM 未使用の素直な実装なので遅い

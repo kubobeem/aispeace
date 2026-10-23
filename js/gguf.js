@@ -1,6 +1,7 @@
 // GGUF reader for the nano-ja demo. Handles the two tensor types this file uses:
 // f32 (0) and bf16 (30). Weights are packed as u32 pairs of f16 for WebGPU
 // (unpack2x16float), which avoids requiring the shader-f16 feature.
+// CPU path loads the same tensors as Float32Array.
 
 const GGML_F32 = 0;
 const GGML_BF16 = 30;
@@ -107,7 +108,6 @@ export function packedF16(file, name) {
   const n = t.dims.reduce((a, b) => a * b, 1);
   if (n % 2) throw new Error(`odd element count for ${name}`);
   const out = new Uint32Array(n / 2);
-  const dv = new DataView(file.buffer);
   if (t.type === GGML_BF16) {
     const tbl = bf16Table();
     const u16 = new Uint16Array(file.buffer, file.dataStart + t.offset, n);
@@ -133,4 +133,28 @@ export function f32Tensor(file, name) {
   const n = t.dims.reduce((a, b) => a * b, 1);
   if (t.type !== GGML_F32) throw new Error(`tensor ${name} is not f32`);
   return new Float32Array(file.buffer.slice(file.dataStart + t.offset, file.dataStart + t.offset + n * 4));
+}
+
+// Load any supported tensor as Float32Array (CPU path). Layout matches GGUF storage
+// order (row-major over dims[0] as the fastest-changing axis). 2D tensors keep
+// shape [dims[0], dims[1]] in memory; callers that need (out, in) reshape like ref.py.
+export function f32Any(file, name) {
+  const t = file.tensors.get(name);
+  if (!t) throw new Error(`missing tensor ${name}`);
+  const n = t.dims.reduce((a, b) => a * b, 1);
+  const out = new Float32Array(n);
+  if (t.type === GGML_F32) {
+    out.set(new Float32Array(file.buffer, file.dataStart + t.offset, n));
+  } else if (t.type === GGML_BF16) {
+    const u16 = new Uint16Array(file.buffer, file.dataStart + t.offset, n);
+    const tmp = new Float32Array(1);
+    const u32 = new Uint32Array(tmp.buffer);
+    for (let i = 0; i < n; i++) {
+      u32[0] = u16[i] << 16;
+      out[i] = tmp[0];
+    }
+  } else {
+    throw new Error(`unsupported tensor type ${t.type} for ${name}`);
+  }
+  return { data: out, dims: t.dims.slice() };
 }
